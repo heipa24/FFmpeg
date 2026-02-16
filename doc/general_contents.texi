@@ -878,7 +878,7 @@ following image formats are supported:
 @item WBMP         @tab X @tab X
     @tab Wireless Application Protocol Bitmap image format
 @item WebP         @tab E @tab X
-    @tab WebP image format, encoding supported through external library libwebp
+    @tab WebP image format, supported through external library libwebp
 @item XBM  @tab X @tab X
     @tab X BitMap image format
 @item XFace @tab X @tab X

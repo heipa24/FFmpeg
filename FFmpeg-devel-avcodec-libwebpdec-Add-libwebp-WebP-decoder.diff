@@ -1,0 +1,293 @@
+diff --git a/Changelog b/Changelog
+index a03a79d17a..4635e16c05 100644
+--- a/Changelog
++++ b/Changelog
+@@ -12,6 +12,7 @@ version <next>:
+ - Animated JPEG XL encoding (via libjxl)
+ - VVC in Matroska
+ - CENC AV1 support in MP4 muxer
++- Animated WebP decoding
+ 
+ version 7.1:
+ - Raw Captions with Time (RCWT) closed caption demuxer
+diff --git a/configure b/configure
+index 4559962a4a..28a532641b 100755
+--- a/configure
++++ b/configure
+@@ -3611,6 +3611,7 @@ libvpx_vp9_encoder_deps="libvpx"
+ libvvenc_encoder_deps="libvvenc"
+ libwebp_encoder_deps="libwebp"
+ libwebp_anim_encoder_deps="libwebp"
++libwebp_decoder_deps="libwebp"
+ libx262_encoder_deps="libx262"
+ libx264_encoder_deps="libx264"
+ libx264_encoder_select="atsc_a53 golomb"
+@@ -7081,7 +7082,8 @@ enabled libvpx            && {
+ enabled libvvenc          && require_pkg_config libvvenc "libvvenc >= 1.6.1" "vvenc/vvenc.h" vvenc_get_version
+ enabled libwebp           && {
+     enabled libwebp_encoder      && require_pkg_config libwebp "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
+-    enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit; }
++    enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit
++    enabled libwebp_decoder      && check_pkg_config libwebp_decoder "libwebpdemux >= 1.5.0" webp/demux.h WebPAnimDecoderOptionsInitInternal; }
+ enabled libx264           && require_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
+                              require_cpp_condition libx264 x264.h "X264_BUILD >= 155" && {
+                              [ "$toolchain" != "msvc" ] ||
+diff --git a/doc/general_contents.texi b/doc/general_contents.texi
+index 5faf89815b..4f10c3e34a 100644
+--- a/doc/general_contents.texi
++++ b/doc/general_contents.texi
+@@ -857,7 +857,7 @@ following image formats are supported:
+ @item WBMP         @tab X @tab X
+     @tab Wireless Application Protocol Bitmap image format
+ @item WebP         @tab E @tab X
+-    @tab WebP image format, encoding supported through external library libwebp
++    @tab WebP image format, supported through external library libwebp
+ @item XBM  @tab X @tab X
+     @tab X BitMap image format
+ @item XFace @tab X @tab X
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index b24201b1af..c9637a2114 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -1179,6 +1179,7 @@ OBJS-$(CONFIG_LIBVPX_VP9_ENCODER)         += libvpxenc.o
+ OBJS-$(CONFIG_LIBVVENC_ENCODER)           += libvvenc.o
+ OBJS-$(CONFIG_LIBWEBP_ENCODER)            += libwebpenc_common.o libwebpenc.o
+ OBJS-$(CONFIG_LIBWEBP_ANIM_ENCODER)       += libwebpenc_common.o libwebpenc_animencoder.o
++OBJS-$(CONFIG_LIBWEBP_DECODER)            += libwebpdec.o
+ OBJS-$(CONFIG_LIBX262_ENCODER)            += libx264.o
+ OBJS-$(CONFIG_LIBX264_ENCODER)            += libx264.o
+ OBJS-$(CONFIG_LIBX265_ENCODER)            += libx265.o
+diff --git a/libavcodec/allcodecs.c b/libavcodec/allcodecs.c
+index f10519617e..5f8f682111 100644
+--- a/libavcodec/allcodecs.c
++++ b/libavcodec/allcodecs.c
+@@ -810,8 +810,9 @@ extern FFCodec ff_libvpx_vp9_encoder;
+ extern const FFCodec ff_libvpx_vp9_decoder;
+ extern const FFCodec ff_libvvenc_encoder;
+ /* preferred over libwebp */
+-extern const FFCodec ff_libwebp_anim_encoder;
+ extern const FFCodec ff_libwebp_encoder;
++extern const FFCodec ff_libwebp_anim_encoder;
++extern const FFCodec ff_libwebp_decoder;
+ extern const FFCodec ff_libx262_encoder;
+ extern const FFCodec ff_libx264_encoder;
+ extern const FFCodec ff_libx264rgb_encoder;
+diff --git a/libavcodec/libwebpdec.c b/libavcodec/libwebpdec.c
+new file mode 100644
+index 0000000000..9ec3b60709
+--- /dev/null
++++ b/libavcodec/libwebpdec.c
+@@ -0,0 +1,200 @@
++/*
++ * LibWebP decoder
++ * Copyright (c) 2025 Peter Xia
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++/**
++ * @file
++ * LibWebP decoder
++ */
++
++#include "decode.h"
++#include "codec_internal.h"
++#include "libavutil/avutil.h"
++#include "libavutil/opt.h"
++#include "libavformat/avformat.h"
++#include "libavformat/avio.h"
++
++#include <webp/demux.h>
++#include <webp/decode.h>
++
++typedef struct AnimatedWebPContext
++{
++    const AVClass *class;
++    WebPAnimDecoderOptions dec_options;
++    WebPAnimDecoder *dec;
++    AVBufferRef *file_content;
++    WebPData webp_data; // references |file_content|
++    uint32_t loop_to_send;
++    uint32_t loop_sent;
++
++    // --- Options ---
++    int ignore_loop;
++} AnimatedWebPContext;
++
++// Initialize the decoder context
++static av_cold int decode_libwebp_init(AVCodecContext *avctx)
++{
++    AnimatedWebPContext *s = avctx->priv_data;
++
++    if (!WebPAnimDecoderOptionsInit(&s->dec_options))
++    {
++        av_log(avctx, AV_LOG_DEBUG, "Cannot initialize WebPAnimDecoderOptions\n");
++        return AVERROR(ENOMEM);
++    }
++    s->dec_options.color_mode = MODE_RGBA;
++    s->dec_options.use_threads = 1;
++    s->file_content = NULL;
++    s->loop_sent = 0;
++
++    avctx->pix_fmt = AV_PIX_FMT_RGBA;
++    avctx->pkt_timebase = av_make_q(1, 1000);
++    avctx->framerate = av_make_q(1, 0);
++
++    av_log(avctx, AV_LOG_DEBUG, "Animated WebP decoder initialized.\n");
++    return 0; // Success
++}
++
++// Decode one frame of the animated WebP
++// This function will be called multiple times by FFmpeg.
++// The first call receives the AVPacket with the full WebP file.
++// Subsequent calls receive empty AVPacket until all frames are decoded.
++static int decode_libwebp_frame(AVCodecContext *avctx, AVFrame *p,
++                                int *got_frame, AVPacket *avpkt)
++{
++    av_log(avctx, AV_LOG_INFO, "decode_libwebp_frame()\n");
++
++    WebPAnimInfo anim_info;
++    uint8_t *frame_rgba;
++    int timestamp_ms;
++
++    AnimatedWebPContext *s = avctx->priv_data;
++    int ret = avpkt->size;
++
++    // Initialization Phase (First Call)
++    // |avpkt| contains the entire file.
++    if (!s->dec)
++    {
++        if (!avpkt || avpkt->size <= 0)
++        {
++            // Should not happen on the first call, but check anyway.
++            av_log(avctx, AV_LOG_ERROR, "No input data provided on first call.\n");
++            return AVERROR(EINVAL);
++        }
++
++        // Store entire WebP file in memory.
++        s->file_content = av_buffer_ref(avpkt->buf);
++        s->webp_data.bytes = s->file_content->data;
++        s->webp_data.size = s->file_content->size;
++
++        s->dec = WebPAnimDecoderNew(&s->webp_data, &s->dec_options);
++        if (!s->dec)
++        {
++            av_log(avctx, AV_LOG_ERROR, "Error creating WebPAnimDecoder.\n");
++            av_buffer_unref(&s->file_content);
++            return AVERROR(ENOMEM);
++        }
++
++        WebPAnimDecoderGetInfo(s->dec, &anim_info);
++
++        s->loop_to_send = s->ignore_loop ? 1 : anim_info.loop_count;
++        avctx->width = anim_info.canvas_width;
++        avctx->coded_width = anim_info.canvas_width;
++        avctx->height = anim_info.canvas_height;
++        avctx->coded_height = anim_info.canvas_height;
++        avctx->framerate = av_make_q(1, 0);
++    }
++
++    if (!WebPAnimDecoderHasMoreFrames(s->dec))
++    {
++        s->loop_sent++;
++        WebPAnimDecoderReset(s->dec);
++    }
++
++    if (s->loop_sent >= s->loop_to_send)
++    {
++        av_log(avctx, AV_LOG_DEBUG, "End of animated WebP stream.\n");
++        return AVERROR_EOF;
++    }
++
++
++    if (!WebPAnimDecoderGetNext(s->dec, &frame_rgba, &timestamp_ms))
++    {
++        av_log(avctx, AV_LOG_ERROR, "Error getting next frame from WebPAnimDecoder.\n");
++        return AVERROR(EINVAL);
++    }
++
++    ret = ff_get_buffer(avctx, p, 0);
++    if (ret)
++    {
++        av_log(avctx, AV_LOG_ERROR, "Failed to allocated buffer.\n");
++        return AVERROR(ENOMEM);
++    }
++
++    p->width = avctx->width;
++    p->height = avctx->height;
++    p->format = AV_PIX_FMT_RGBA;
++    p->pts = timestamp_ms;
++    p->pkt_dts = 0;
++    p->pict_type = AV_PICTURE_TYPE_I;
++
++    memcpy(p->data[0], frame_rgba, p->width * p->height * 4);
++
++    *got_frame = 1;
++    return ret;
++}
++
++static av_cold int decode_libwebp_close(AVCodecContext *avctx)
++{
++    AnimatedWebPContext *s = avctx->priv_data;
++    av_buffer_unref(&s->file_content);
++    if (s->dec)
++    {
++        WebPAnimDecoderDelete(s->dec);
++        s->dec = NULL;
++    }
++    return 0;
++}
++
++static const AVOption options[] = {
++    {"ignore_loop", "ignore loop setting (netscape extension)", offsetof(AnimatedWebPContext, ignore_loop), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, AV_OPT_FLAG_DECODING_PARAM},
++    {NULL}};
++
++static const AVClass libwebp_decoder_class = {
++    .class_name = "libwebp_decoder",
++    .item_name = av_default_item_name,
++    .option = options,
++    .version = LIBAVUTIL_VERSION_INT,
++    .category = AV_CLASS_CATEGORY_DECODER,
++};
++
++// Define the AVCodec structure for FFmpeg
++const FFCodec ff_libwebp_decoder = {
++    .p.name         = "libwebp",
++    CODEC_LONG_NAME("libwebp image/animation decoder"),
++    .p.type         = AVMEDIA_TYPE_VIDEO,
++    .p.id           = AV_CODEC_ID_WEBP,
++    .p.priv_class   = &libwebp_decoder_class,
++    .priv_data_size = sizeof(AnimatedWebPContext),
++    .p.wrapper_name = "libwebp",
++    .init           = decode_libwebp_init,
++    FF_CODEC_DECODE_CB(decode_libwebp_frame),
++    .close          = decode_libwebp_close,
++    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
++};
+diff --git a/libavcodec/version.h b/libavcodec/version.h
+index 8c3d476003..5957009457 100644
+--- a/libavcodec/version.h
++++ b/libavcodec/version.h
+@@ -29,7 +29,7 @@
+ 
+ #include "version_major.h"
+ 
+-#define LIBAVCODEC_VERSION_MINOR   0
++#define LIBAVCODEC_VERSION_MINOR   1
+ #define LIBAVCODEC_VERSION_MICRO 100
+ 
+ #define LIBAVCODEC_VERSION_INT  AV_VERSION_INT(LIBAVCODEC_VERSION_MAJOR, \

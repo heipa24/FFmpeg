@@ -3799,6 +3799,7 @@ libvpx_vp9_encoder_deps="libvpx"
 libvvenc_encoder_deps="libvvenc"
 libwebp_encoder_deps="libwebp"
 libwebp_anim_encoder_deps="libwebp"
+libwebp_decoder_deps="libwebp"
 libx262_encoder_deps="libx262"
 libx264_encoder_deps="libx264"
 libx264_encoder_select="atsc_a53 golomb"
@@ -7390,7 +7391,8 @@ enabled libvpx            && {
 enabled libvvenc          && require_pkg_config libvvenc "libvvenc >= 1.6.1" "vvenc/vvenc.h" vvenc_get_version
 enabled libwebp           && {
     enabled libwebp_encoder      && require_pkg_config libwebp "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
-    enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit; }
+    enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit
+    enabled libwebp_decoder      && check_pkg_config libwebp_decoder "libwebpdemux >= 1.5.0" webp/demux.h WebPAnimDecoderOptionsInitInternal; }
 enabled libx264           && require_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
                              require_cpp_condition libx264 x264.h "X264_BUILD >= 155" && {
                              [ "$toolchain" != "msvc" ] ||

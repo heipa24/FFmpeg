@@ -74,10 +74,14 @@ AVFILTER_DEFINE_CLASS(amf_capture);
 // need to increase precision for capture timing accuracy
 #if defined (_WIN32)
 
-#include <timeapi.h>
+#include <windows.h>
 
-typedef WINMMAPI MMRESULT (WINAPI *timeBeginPeriod_fn)( UINT uPeriod);
-typedef WINMMAPI MMRESULT (WINAPI *timeEndPeriod_fn)(UINT uPeriod);
+#define TIMERR_NOERROR 0
+#define TIMERR_NOCANDO 97
+
+typedef UINT MMRESULT;
+typedef MMRESULT (WINAPI *timeBeginPeriod_fn)(UINT uPeriod);
+typedef MMRESULT (WINAPI *timeEndPeriod_fn)(UINT uPeriod);
 
 static void amf_increase_timer_precision(AMFGrabContext *ctx)
 {

@@ -185,6 +185,12 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
                         avctx->width * 4, avctx->height);
 
     *got_frame = 1;
+
+    if (WebPAnimDecoderHasMoreFrames(s->dec) || s->infinite_loop ||
+        s->loop_sent < s->loop_count) {
+        return 0;
+    }
+
     return avpkt->size;
 }
 

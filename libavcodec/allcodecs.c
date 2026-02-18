@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Provide registration of all codecs, parsers and bitstream filters for libavcodec.
  * Copyright (c) 2002 Fabrice Bellard
  *
@@ -392,6 +392,7 @@ extern const FFCodec ff_vqc_decoder;
 extern const FFCodec ff_vvc_decoder;
 extern const FFCodec ff_wbmp_decoder;
 extern const FFCodec ff_wbmp_encoder;
+extern const FFCodec ff_libwebp_decoder;
 extern const FFCodec ff_webp_decoder;
 extern const FFCodec ff_wcmv_decoder;
 extern const FFCodec ff_wrapped_avframe_encoder;
@@ -831,7 +832,6 @@ extern const FFCodec ff_libvvenc_encoder;
 /* preferred over libwebp */
 extern const FFCodec ff_libwebp_anim_encoder;
 extern const FFCodec ff_libwebp_encoder;
-extern const FFCodec ff_libwebp_decoder;
 extern const FFCodec ff_libx262_encoder;
 extern const FFCodec ff_libx264_encoder;
 extern const FFCodec ff_libx264rgb_encoder;

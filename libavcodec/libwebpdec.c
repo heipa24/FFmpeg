@@ -140,27 +140,32 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
             }
             s->timestamp_offset += s->prev_timestamp_ms;
             s->loop_sent++;
+            if (!s->infinite_loop && s->loop_sent >= s->loop_count) {
+                *got_frame = 0;
+                return 0;
+            }
             WebPAnimDecoderReset(s->dec);
             s->frame_sent = 0;
             s->prev_timestamp_ms = 0;
             s->first_frame_pts = -1;
             av_log(avctx, AV_LOG_DEBUG, "Loop %u/%u (flush)\n", s->loop_sent + 1,
                    s->infinite_loop ? 0 : s->loop_count);
+        } else {
+            return 0;
         }
     }
 
     if (!WebPAnimDecoderHasMoreFrames(s->dec)) {
         s->timestamp_offset += s->prev_timestamp_ms;
         s->loop_sent++;
-        WebPAnimDecoderReset(s->dec);
-        s->frame_sent = 0;
-        s->prev_timestamp_ms = 0;
-        s->first_frame_pts = -1;
-
         if (!s->infinite_loop && s->loop_sent >= s->loop_count) {
             *got_frame = 0;
             return 0;
         }
+        WebPAnimDecoderReset(s->dec);
+        s->frame_sent = 0;
+        s->prev_timestamp_ms = 0;
+        s->first_frame_pts = -1;
         av_log(avctx, AV_LOG_DEBUG, "Loop %u/%u\n", s->loop_sent + 1,
                s->infinite_loop ? 0 : s->loop_count);
     }

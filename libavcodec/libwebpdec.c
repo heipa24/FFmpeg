@@ -47,6 +47,7 @@ typedef struct AnimatedWebPContext {
     int prev_timestamp_ms;
     int ignore_loop;
     int infinite_loop;
+    int file_has_infinite_loop;
     int first_frame_pts;
 } AnimatedWebPContext;
 
@@ -66,6 +67,7 @@ static av_cold int libwebp_decode_init(AVCodecContext *avctx)
     s->frame_sent = 0;
     s->prev_timestamp_ms = 0;
     s->infinite_loop = 0;
+    s->file_has_infinite_loop = 0;
     s->first_frame_pts = -1;
 
     avctx->pix_fmt = AV_PIX_FMT_RGBA;
@@ -109,14 +111,17 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
             return AVERROR_EXTERNAL;
         }
 
-        av_log(avctx, AV_LOG_DEBUG,
-               "WebP: %ux%u, %u frames, loop_count=%u\n",
-               anim_info.canvas_width, anim_info.canvas_height,
-               anim_info.frame_count, anim_info.loop_count);
-
         s->loop_count = anim_info.loop_count;
         s->frame_count = anim_info.frame_count;
-        s->infinite_loop = (anim_info.loop_count == 0) && !s->ignore_loop;
+        s->file_has_infinite_loop = (anim_info.loop_count == 0);
+        s->infinite_loop = s->file_has_infinite_loop && !s->ignore_loop;
+        if (s->file_has_infinite_loop && s->ignore_loop)
+            s->loop_count = 1;
+
+        av_log(avctx, AV_LOG_DEBUG,
+               "WebP: %ux%u, %u frames, loop_count=%u (effective=%u, infinite=%d)\n",
+               anim_info.canvas_width, anim_info.canvas_height,
+               anim_info.frame_count, anim_info.loop_count, s->loop_count, s->infinite_loop);
 
         avctx->width = anim_info.canvas_width;
         avctx->coded_width = anim_info.canvas_width;
@@ -259,5 +264,5 @@ const FFCodec ff_libwebp_decoder = {
     FF_CODEC_DECODE_CB(libwebp_decode_frame),
     .close          = libwebp_decode_close,
     .flush          = libwebp_decode_flush,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
 };

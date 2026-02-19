@@ -147,8 +147,6 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
             s->first_frame_pts = -1;
             av_log(avctx, AV_LOG_DEBUG, "Loop %u/%u (flush)\n", s->loop_sent + 1,
                    s->infinite_loop ? 0 : s->loop_count);
-        } else {
-            return 0;
         }
     }
 

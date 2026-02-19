@@ -129,9 +129,6 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
         avctx->coded_width = anim_info.canvas_width;
         avctx->height = anim_info.canvas_height;
         avctx->coded_height = anim_info.canvas_height;
-
-        if (anim_info.frame_count > 0)
-            avctx->framerate = av_make_q(1000, 1);
     } else if (!avpkt || avpkt->size <= 0) {
         if (!WebPAnimDecoderHasMoreFrames(s->dec)) {
             if (!s->infinite_loop && s->loop_sent >= s->loop_count) {

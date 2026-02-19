@@ -49,6 +49,7 @@ typedef struct AnimatedWebPContext {
     int infinite_loop;
     int file_has_infinite_loop;
     int first_frame_pts;
+    int64_t timestamp_offset;
 } AnimatedWebPContext;
 
 static av_cold int libwebp_decode_init(AVCodecContext *avctx)
@@ -69,6 +70,7 @@ static av_cold int libwebp_decode_init(AVCodecContext *avctx)
     s->infinite_loop = 0;
     s->file_has_infinite_loop = 0;
     s->first_frame_pts = -1;
+    s->timestamp_offset = 0;
 
     avctx->pix_fmt = AV_PIX_FMT_RGBA;
     avctx->pkt_timebase = av_make_q(1, 1000);
@@ -136,6 +138,7 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
                 *got_frame = 0;
                 return 0;
             }
+            s->timestamp_offset += s->prev_timestamp_ms;
             s->loop_sent++;
             WebPAnimDecoderReset(s->dec);
             s->frame_sent = 0;
@@ -147,6 +150,7 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
     }
 
     if (!WebPAnimDecoderHasMoreFrames(s->dec)) {
+        s->timestamp_offset += s->prev_timestamp_ms;
         s->loop_sent++;
         WebPAnimDecoderReset(s->dec);
         s->frame_sent = 0;
@@ -179,8 +183,8 @@ static int libwebp_decode_frame(AVCodecContext *avctx, AVFrame *p,
     p->width = avctx->width;
     p->height = avctx->height;
     p->format = AV_PIX_FMT_RGBA;
-    p->pts = timestamp_ms;
-    p->pkt_dts = timestamp_ms;
+    p->pts = timestamp_ms + s->timestamp_offset;
+    p->pkt_dts = timestamp_ms + s->timestamp_offset;
     p->pict_type = AV_PICTURE_TYPE_I;
     p->flags |= AV_FRAME_FLAG_KEY;
 
@@ -236,6 +240,7 @@ static void libwebp_decode_flush(AVCodecContext *avctx)
         s->frame_sent = 0;
         s->prev_timestamp_ms = 0;
         s->first_frame_pts = -1;
+        s->timestamp_offset = 0;
     }
 }
 

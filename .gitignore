@@ -46,6 +46,7 @@
 /src
 /mapfile
 /tools/python/__pycache__/
+/testing-bin/
 /libavcodec/vulkan/*.c
 /libavfilter/vulkan/*.c
 /.*/

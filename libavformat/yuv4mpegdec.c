@@ -1,4 +1,4 @@
-/*
+﻿/*
  * YUV4MPEG demuxer
  * Copyright (c) 2001, 2002, 2003 Fabrice Bellard
  *
